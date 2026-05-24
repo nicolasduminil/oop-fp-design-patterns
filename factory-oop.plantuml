@@ -1,0 +1,20 @@
+@startuml
+
+!theme plain
+top to bottom direction
+skinparam linetype ortho
+
+entity BookProduct << record >>
+entity ElectronicProduct << record >>
+entity FashionProduct << record >>
+interface Product << interface >>
+class ProductFactory
+enum ProductType << enumeration >>
+
+BookProduct        -[#008200,dashed]-^  Product           
+ElectronicProduct  -[#008200,dashed]-^  Product           
+FashionProduct     -[#008200,dashed]-^  Product           
+ProductFactory     -[#595959,dashed]->  BookProduct       : "«create»"
+ProductFactory     -[#595959,dashed]->  ElectronicProduct : "«create»"
+ProductFactory     -[#595959,dashed]->  FashionProduct    : "«create»"
+@enduml

@@ -1,0 +1,19 @@
+@startuml
+
+!theme plain
+top to bottom direction
+skinparam linetype ortho
+
+entity BookProduct << record >>
+entity ElectronicProduct << record >>
+entity FashionProduct << record >>
+interface Product << interface >>
+enum ProductType << enumeration >>
+interface TriFunction<A, B, C, R> << interface >>
+
+BookProduct        -[#008200,dashed]-^  Product
+ElectronicProduct  -[#008200,dashed]-^  Product           
+FashionProduct     -[#008200,dashed]-^  Product           
+ProductType       "1" *-[#595959,plain]-> "factory\n1" TriFunction
+TriFunction -> Product: "«create»"
+@enduml
