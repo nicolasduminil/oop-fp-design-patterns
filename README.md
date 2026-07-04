@@ -175,5 +175,140 @@ bvy this one:
       this.factory = factory;
     }
 
+## The Visitor
+
+This design pattern belongs to the behavioral category and its purpose is to 
+add new operations to an existing object hierarchy without modifying the classes 
+of that hierarchy. It is the classic answer to the *expression problem*: when the 
+set of types is stable but the set of operations grows, the Visitor lets you keep 
+adding operations cheaply.
+
+We reuse the same domain as the factory: a `Product` implemented by `BookProduct`, 
+`ElectronicProduct` and `FashionProduct`. To give the visitor a reason to exist, 
+each operation now behaves differently per product type:
+
+  - **VAT**: a reduced 5.5% rate for books, the standard 20% rate otherwise.
+  - **Shipping**: `10.00 + 2%` of the price for (fragile, insured) electronics, a 
+    flat `3.00` for books and a flat `5.00` for fashion.
+  - **Discount**: 10% for electronics, 5% for books, 15% for fashion.
+
+### The object-oriented approach
+
+The classic Visitor relies on *double dispatch*. Each `Product` accepts a visitor 
+and calls back the overload matching its own type:
+
+    public interface Product
+    {
+      ...
+      <R> R accept(ProductVisitor<R> visitor);
+    }
+
+    public record BookProduct (String name, String description, BigDecimal price) implements Product
+    {
+      ...
+      public <R> R accept(ProductVisitor<R> visitor)
+      {
+        return visitor.visit(this);
+      }
+    }
+
+The operation lives in a generic visitor, one `visit` overload per concrete type:
+
+    public interface ProductVisitor<R>
+    {
+      R visit(ElectronicProduct product);
+      R visit(BookProduct product);
+      R visit(FashionProduct product);
+    }
+
+Computing the VAT of any product is then a matter of applying a concrete visitor:
+
+    BigDecimal vat = book.accept(new VatVisitor());
+
+Adding a new operation (shipping, discount, ...) only requires a new 
+`ProductVisitor` implementation - the `Product` classes never change. This is the 
+reverse of the trade-off the factory made: the factory made adding a new 
+*operation* easy but a new *product type* costly (you must edit its central 
+`switch`); the visitor makes adding a new *operation* free but shifts that same 
+cost onto types - a new product type now forces **every** visitor to be updated. 
+It is the classic *expression problem*: you can make types cheap to add or 
+operations cheap to add, but not both.
+
+### The functional approach
+
+In modern Java the functional counterpart of the Visitor is **exhaustive pattern 
+matching over a sealed type**. We first seal the hierarchy:
+
+    public sealed interface Product permits ElectronicProduct, BookProduct, FashionProduct
+    {
+      ...
+    }
+
+An operation is then just a `Function<Product, R>` built on a `switch` that 
+deconstructs each record. Because `Product` is sealed, the compiler proves the 
+switch is exhaustive - no `default` branch, no double dispatch, no `accept`:
+
+    public static final Function<Product, BigDecimal> VAT = product -> switch (product)
+    {
+      case BookProduct(String name, String description, BigDecimal price) -> amount(price, "0.055");
+      case ElectronicProduct(String name, String description, BigDecimal price) -> amount(price, "0.20");
+      case FashionProduct(String name, String description, BigDecimal price) -> amount(price, "0.20");
+    };
+
+Being ordinary functions, these operations compose:
+
+    ProductOperations.DISCOUNT.andThen(amount -> "discount=" + amount).apply(fashion);
+
+Between the classic Visitor and pure pattern matching sits an intermediate step: 
+the visitor as a *bundle of functions*, one lambda per type, instead of an 
+interface with one method per type:
+
+    public record ProductVisitor<R>(
+      Function<ElectronicProduct, R> onElectronic,
+      Function<BookProduct, R> onBook,
+      Function<FashionProduct, R> onFashion)
+    {
+      public R visit(Product product)
+      {
+        return switch (product)
+        {
+          case ElectronicProduct e -> onElectronic.apply(e);
+          case BookProduct b -> onBook.apply(b);
+          case FashionProduct f -> onFashion.apply(f);
+        };
+      }
+    }
+
+Which makes an operation a value you can assemble on the fly:
+
+    ProductVisitor<BigDecimal> vat = new ProductVisitor<>(
+      e -> ..., b -> ..., f -> ...);
+    BigDecimal amount = vat.visit(book);
+
+## Project structure
+
+The code is organized as a multi-module Maven project. The product domain lives
+in its own `common` module: a `sealed` `Product` interface, the three product
+records and the `ProductType` enumerated - which already carries the FP factory
+function seen above. Everything that *can* reuse that domain does:
+
+    oop-fp-design-patterns        (parent POM)
+    ├── common                    sealed Product, the records, ProductType(+factory)
+    ├── factory   (→ common)      ProductFactory (OOP); the FP factory *is* common.ProductType
+    └── visitor   (→ common)      FP: operations over the common records (switch + lambda bundle)
+                                  OOP: its own element hierarchy (see below)
+
+The FP factory and the FP visitor both operate directly on the `common` records,
+so nothing is duplicated there. The one exception is the **object-oriented
+Visitor**: it needs an `accept` method on every element (double dispatch), and
+since `common.Product` is `sealed` it cannot be extended from another module.
+The OOP visitor therefore owns its element hierarchy and reuses only the
+`ProductType` enumerated. This asymmetry is not accidental. The classic Visitor
+requires every element to expose an `accept` method, which couples the elements to
+the visitor abstraction - they must be defined together with it, and so cannot be
+the sealed `common` records. The functional approach has no such coupling: it
+pattern-matches over the sealed type from the outside, so the elements know nothing
+about the operations applied to them and can stay the shared `common` records.
+
 The full code of these examples, including the associated unit tests, 
 can be found here.

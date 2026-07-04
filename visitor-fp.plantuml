@@ -1,0 +1,47 @@
+@startuml
+
+!theme plain
+top to bottom direction
+skinparam linetype ortho
+
+interface Product << sealed >> {
+  +name() : String
+  +description() : String
+  +price() : BigDecimal
+  +type() : ProductType
+}
+entity BookProduct << record >>
+entity ElectronicProduct << record >>
+entity FashionProduct << record >>
+enum ProductType << enumeration >>
+
+class ProductOperations {
+  +{static} VAT : Function<Product, BigDecimal>
+  +{static} DISCOUNT : Function<Product, BigDecimal>
+  +{static} SHIPPING : Function<Product, BigDecimal>
+}
+entity ProductVisitor<R> << record >> {
+  +onElectronic : Function<ElectronicProduct, R>
+  +onBook : Function<BookProduct, R>
+  +onFashion : Function<FashionProduct, R>
+  +visit(Product) : R
+}
+
+note top of Product
+  The FP visitor reuses the sealed common.Product
+  and its records directly. Because Product is
+  sealed, the switch over it is provably exhaustive
+  and needs no accept()/double dispatch.
+end note
+
+BookProduct        -[#008200,dashed]-^  Product
+ElectronicProduct  -[#008200,dashed]-^  Product
+FashionProduct     -[#008200,dashed]-^  Product
+
+ProductOperations -[#595959,dashed]->  Product : "«switch»"
+ProductVisitor    -[#595959,dashed]->  Product : "«switch»"
+ProductVisitor    -[#595959,dashed]->  ElectronicProduct
+ProductVisitor    -[#595959,dashed]->  BookProduct
+ProductVisitor    -[#595959,dashed]->  FashionProduct
+Product           -[#595959,dashed]->  ProductType : "type"
+@enduml

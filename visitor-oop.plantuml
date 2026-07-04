@@ -1,0 +1,48 @@
+@startuml
+
+!theme plain
+top to bottom direction
+skinparam linetype ortho
+
+interface Product << interface >> {
+  +name() : String
+  +description() : String
+  +price() : BigDecimal
+  +type() : ProductType
+  +accept(ProductVisitor<R>) : R
+}
+entity BookProduct << record >>
+entity ElectronicProduct << record >>
+entity FashionProduct << record >>
+enum ProductType << enumeration >>
+
+interface ProductVisitor<R> << interface >> {
+  +visit(ElectronicProduct) : R
+  +visit(BookProduct) : R
+  +visit(FashionProduct) : R
+}
+class VatVisitor
+class DiscountVisitor
+class ShippingCostVisitor
+
+note top of Product
+  The OOP visitor owns its element hierarchy:
+  Product adds accept(), so it cannot reuse the
+  sealed common.Product. ProductType is reused
+  from the common module.
+end note
+
+BookProduct        -[#008200,dashed]-^  Product
+ElectronicProduct  -[#008200,dashed]-^  Product
+FashionProduct     -[#008200,dashed]-^  Product
+
+VatVisitor          -[#008200,dashed]-^  ProductVisitor
+DiscountVisitor     -[#008200,dashed]-^  ProductVisitor
+ShippingCostVisitor -[#008200,dashed]-^  ProductVisitor
+
+Product        -[#595959,dashed]->  ProductVisitor    : "«accept»"
+ProductVisitor -[#595959,dashed]->  ElectronicProduct : "«visit»"
+ProductVisitor -[#595959,dashed]->  BookProduct       : "«visit»"
+ProductVisitor -[#595959,dashed]->  FashionProduct    : "«visit»"
+Product        -[#595959,dashed]->  ProductType       : "type"
+@enduml
