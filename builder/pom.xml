@@ -10,16 +10,12 @@
     <version>1.0.4-SNAPSHOT</version>
   </parent>
 
-  <artifactId>factory</artifactId>
+  <artifactId>builder</artifactId>
 
   <dependencies>
     <dependency>
       <groupId>fr.simplex-software.workshop</groupId>
       <artifactId>common</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.vavr</groupId>
-      <artifactId>vavr</artifactId>
     </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>

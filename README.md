@@ -234,7 +234,16 @@ cost onto types - a new product type now forces **every** visitor to be updated.
 It is the classic *expression problem*: you can make types cheap to add or 
 operations cheap to add, but not both.
 
+The following figure below shows the object-oriented implementation class diagram:
+
+![visitor-oop](visitor-oop.png "OOP Visitor")
+
+
 ### The functional approach
+
+Look now at the class diagram of the Vistor functional style implemntation:
+
+![visitor-fp](visitor-fp.png "FP Visitor")
 
 In modern Java the functional counterpart of the Visitor is **exhaustive pattern 
 matching over a sealed type**. We first seal the hierarchy:
@@ -285,6 +294,125 @@ Which makes an operation a value you can assemble on the fly:
       e -> ..., b -> ..., f -> ...);
     BigDecimal amount = vat.visit(book);
 
+## The Builder
+
+This design pattern belongs to the creational category, like the factory, but it
+solves a different problem. The factory hides *which* concrete type gets
+instantiated while the Builder assembles a single, complex object step by step,
+separating its construction from its representation. It is the classic answer to
+the *telescoping-constructor problem*: an object with many parameters, among which some
+required, most optional, whose constructor would otherwise explode into a
+combinatorial set of overloads.
+
+Our `Product` records have only three required fields, so they don't motivate a
+builder. We therefore introduce an `Order`: a customer order that aggregates the
+`common` products as line items and adds several optional attributes - a coupon
+code, a gift-wrap flag and a free-text note. Whatever the style, the target is the
+same immutable value:
+
+    public record Order(
+      String customer,
+      String currency,
+      List<Product> items,
+      Optional<String> coupon,
+      boolean giftWrapped,
+      Optional<String> note)
+    {
+      public Order
+      {
+        Objects.requireNonNull(customer, "Customer is null");
+        Objects.requireNonNull(currency, "Currency is null");
+        items = items == null ? List.of() : List.copyOf(items);
+        coupon = coupon == null ? Optional.empty() : coupon;
+        note = note == null ? Optional.empty() : note;
+      }
+
+      public BigDecimal subtotal() { ... }
+    }
+
+### The object-oriented approach
+
+The figure below shows the class diagram of the object-oriented builder:
+
+![builder-oop](builder-oop.png "OOP Builder")
+
+The classic *Gang of Four* Builder is a mutable accumulator. The required
+arguments are captured up front, the optional ones are added through fluent calls
+that all return `this`, and `build()` freezes the accumulated state into the
+immutable `Order`:
+
+    public final class OrderBuilder
+    {
+      private final String customer;
+      private final String currency;
+      private final List<Product> items = new ArrayList<>();
+      private String coupon;
+      private boolean giftWrapped;
+      private String note;
+
+      public static OrderBuilder of(String customer, String currency) { ... }
+
+      public OrderBuilder addItem(Product item) { items.add(item); return this; }
+      public OrderBuilder coupon(String coupon) { this.coupon = coupon; return this; }
+      public OrderBuilder giftWrap() { this.giftWrapped = true; return this; }
+      public OrderBuilder note(String note) { this.note = note; return this; }
+
+      public Order build()
+      {
+        return new Order(customer, currency, items,
+          Optional.ofNullable(coupon), giftWrapped, Optional.ofNullable(note));
+      }
+    }
+
+Building an order reads as a sentence, and you only mention the parts you actually
+need:
+
+    Order order = OrderBuilder.of("Alice", "EUR")
+      .addItem(book).addItem(phone)
+      .coupon("SUMMER").giftWrap()
+      .build();
+
+### The functional approach
+
+Look now at the class diagram of the functional style implementation:
+
+![builder-fp](builder-fp.png "FP Builder")
+
+The functional counterpart keeps the same immutable `Order` target but drops the
+mutable accumulator. Each build step becomes a first-class
+`UnaryOperator<Order>` value - a pure function mapping one immutable `Order` to
+the next by returning a modified copy:
+
+    public static UnaryOperator<Order> addItem(Product item)
+    {
+      return order -> new Order(order.customer(), order.currency(),
+        Stream.concat(order.items().stream(), Stream.of(item)).toList(),
+        order.coupon(), order.giftWrapped(), order.note());
+    }
+
+Because the steps are ordinary values, they are not called *on* a builder, but they
+are composed with `andThen`, exactly as the factory composed its `factory`
+function and the visitor composed its operations:
+
+    Function<Order, Order> config = addItem(book)
+      .andThen(addItem(phone))
+      .andThen(coupon("SUMMER"))
+      .andThen(giftWrap());
+
+    Order order = config.apply(OrderBuilder.empty("Alice", "EUR"));
+
+This is more than a stylistic variation. In the OOP version a step is a method
+call that exists only for the duration of the chain. In the FP version a step is
+a value which can be stored it in a variable, passed to another method, kept in a
+list of steps and applied later, or reused the very same step twice:
+
+    UnaryOperator<Order> addBook = addItem(book);
+    Order order = addBook.andThen(addBook).apply(OrderBuilder.empty("Alice", "EUR"));
+
+The object-oriented Builder wraps a stateful object around the immutable target
+while the functional one expresses construction as the composition of pure copy
+functions over it. "Turtles all the way down", and both land on the same `Order`.
+
 ## Project structure
 
 The code is organized as a multi-module Maven project. The product domain lives
@@ -295,20 +423,22 @@ function seen above. Everything that *can* reuse that domain does:
     oop-fp-design-patterns        (parent POM)
     ├── common                    sealed Product, the records, ProductType(+factory)
     ├── factory   (→ common)      ProductFactory (OOP); the FP factory *is* common.ProductType
-    └── visitor   (→ common)      FP: operations over the common records (switch + lambda bundle)
-                                  OOP: its own element hierarchy (see below)
+    ├── visitor   (→ common)      FP: operations over the common records (switch + lambda bundle)
+    │                             OOP: its own element hierarchy (see below)
+    └── builder   (→ common)      immutable Order over the common records; OOP: fluent
+                                  OrderBuilder; FP: composed UnaryOperator<Order> steps
 
 The FP factory and the FP visitor both operate directly on the `common` records,
-so nothing is duplicated there. The one exception is the **object-oriented
-Visitor**: it needs an `accept` method on every element (double dispatch), and
+so nothing is duplicated there. The one exception is the object-oriented
+Visitor which needs an `accept` method on every element (double dispatch), and
 since `common.Product` is `sealed` it cannot be extended from another module.
 The OOP visitor therefore owns its element hierarchy and reuses only the
 `ProductType` enumerated. This asymmetry is not accidental. The classic Visitor
 requires every element to expose an `accept` method, which couples the elements to
-the visitor abstraction - they must be defined together with it, and so cannot be
-the sealed `common` records. The functional approach has no such coupling: it
+the visitor abstraction. These elements must be defined together with the visitor abstraction, and so cannot be
+the sealed records defined in `common`. The functional approach has no such coupling: it
 pattern-matches over the sealed type from the outside, so the elements know nothing
-about the operations applied to them and can stay the shared `common` records.
+about the operations applied to them and, hence, can be the shared `common` records.
 
 The full code of these examples, including the associated unit tests, 
 can be found here.

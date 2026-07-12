@@ -1,0 +1,48 @@
+@startuml
+
+!theme plain
+top to bottom direction
+skinparam linetype ortho
+
+interface Product << sealed >> {
+  +name() : String
+  +description() : String
+  +price() : BigDecimal
+  +type() : ProductType
+}
+entity Order << record >> {
+  +customer : String
+  +currency : String
+  +items : List<Product>
+  +coupon : Optional<String>
+  +giftWrapped : boolean
+  +note : Optional<String>
+  +subtotal() : BigDecimal
+}
+
+class OrderBuilder {
+  -customer : String
+  -currency : String
+  -items : List<Product>
+  -coupon : String
+  -giftWrapped : boolean
+  -note : String
+  +{static} of(String, String) : OrderBuilder
+  +addItem(Product) : OrderBuilder
+  +coupon(String) : OrderBuilder
+  +giftWrap() : OrderBuilder
+  +note(String) : OrderBuilder
+  +build() : Order
+}
+
+note top of OrderBuilder
+  Classic GoF Builder: a mutable accumulator that
+  collects the parts through fluent calls and, on
+  build(), returns the immutable Order. Solves the
+  telescoping-constructor problem.
+end note
+
+OrderBuilder -[#595959,dashed]->  Order : "build()"
+OrderBuilder -[#595959,dashed]->  Product : "addItem"
+Order        o-->  "*" Product : "items"
+@enduml

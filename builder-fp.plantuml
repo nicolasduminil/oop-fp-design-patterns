@@ -1,0 +1,41 @@
+@startuml
+
+!theme plain
+top to bottom direction
+skinparam linetype ortho
+
+interface Product << sealed >> {
+  +name() : String
+  +description() : String
+  +price() : BigDecimal
+  +type() : ProductType
+}
+entity Order << record >> {
+  +customer : String
+  +currency : String
+  +items : List<Product>
+  +coupon : Optional<String>
+  +giftWrapped : boolean
+  +note : Optional<String>
+  +subtotal() : BigDecimal
+}
+
+class OrderBuilder {
+  +{static} empty(String, String) : Order
+  +{static} addItem(Product) : UnaryOperator<Order>
+  +{static} coupon(String) : UnaryOperator<Order>
+  +{static} giftWrap() : UnaryOperator<Order>
+  +{static} note(String) : UnaryOperator<Order>
+}
+
+note top of OrderBuilder
+  Functional Builder: each step is a first-class
+  UnaryOperator<Order> value mapping one immutable
+  Order to the next. Steps compose with andThen -
+  the same composition theme as factory and visitor.
+end note
+
+OrderBuilder -[#595959,dashed]->  Order : "«UnaryOperator<Order>»"
+OrderBuilder -[#595959,dashed]->  Product : "addItem"
+Order        o-->  "*" Product : "items"
+@enduml
