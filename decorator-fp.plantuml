@@ -1,0 +1,29 @@
+@startuml
+
+!theme plain
+top to bottom direction
+skinparam linetype ortho
+
+interface Product << sealed >> {
+  +name() : String
+  +description() : String
+  +price() : BigDecimal
+  +type() : ProductType
+}
+
+class ProductDecorators {
+  +{static} DISCOUNTED : UnaryOperator<Product>
+  +{static} TAXED : UnaryOperator<Product>
+  +{static} GIFT_WRAPPED : UnaryOperator<Product>
+}
+
+note top of ProductDecorators
+  Functional Decorator: each decoration is a first-class
+  UnaryOperator<Product> value that rebuilds the immutable
+  common.Product through the ProductType factory. Decorations
+  compose with andThen - the same composition theme as
+  factory, visitor and builder - and reuse common directly.
+end note
+
+ProductDecorators -[#595959,dashed]->  Product : "«UnaryOperator<Product>»"
+@enduml

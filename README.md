@@ -413,32 +413,151 @@ The object-oriented Builder wraps a stateful object around the immutable target
 while the functional one expresses construction as the composition of pure copy
 functions over it. "Turtles all the way down", and both land on the same `Order`.
 
+## The Decorator
+
+This design pattern belongs to the structural category and its purpose is to
+attach additional responsibilities to an object dynamically, by wrapping it in
+another object that shares the same interface. It is the flexible alternative to
+subclassing for extending behavior: rather than a combinatorial explosion of
+`DiscountedTaxedGiftWrappedProduct` subclasses, you wrap a product in as many
+independent decorators as you need, and they stack.
+
+We reuse the same `Product` domain. Each decorator changes the `price()` and the
+`description()` while leaving everything else untouched. To keep the pattern
+visibly distinct from the visitor, whose rules varied per product type, the
+decorators here apply the same rule to every product:
+
+  - Discounted: 10% off the wrapped price.
+  - Taxed: adds 20% VAT to the wrapped price.
+  - GiftWrapped: adds a flat `5.00` wrapping fee.
+
+Because they stack, a 100.00 book decorated `Discounted` → `Taxed` →
+`GiftWrapped` goes `100.00 → 90.00 → 108.00 → 113.00`, and its description reads
+`"A book (discounted) (VAT incl.) (gift-wrapped)"`.
+
+### The object-oriented approach
+
+The figure below shows the class diagram of the object-oriented decorator:
+
+![decorator-oop](decorator-oop.png "OOP Decorator")
+
+The classic *Gang of Four* Decorator is an object that implements the component
+interface and holds a reference to another component, delegating the untouched
+operations and overriding the ones it enhances. An abstract `ProductDecorator`
+captures the delegation once:
+
+    public abstract class ProductDecorator implements Product
+    {
+      protected final Product product;
+
+      protected ProductDecorator(Product product)
+      {
+        this.product = Objects.requireNonNull(product, "Product is null");
+      }
+
+      public String name() { return product.name(); }
+      public String description() { return product.description(); }
+      public BigDecimal price() { return product.price(); }
+      public ProductType type() { return product.type(); }
+    }
+
+Each concrete decorator then overrides only what it changes:
+
+    public class Discounted extends ProductDecorator
+    {
+      private static final BigDecimal RATE = new BigDecimal("0.10");
+
+      public Discounted(Product product) { super(product); }
+
+      public BigDecimal price()
+      {
+        return product.price().subtract(amount(product.price(), RATE));
+      }
+
+      public String description()
+      {
+        return product.description() + " (discounted)";
+      }
+    }
+
+Since a decorator is a `Product`, decorators wrap decorators and the enhancements
+compose by nesting:
+
+    Product wrapped = new GiftWrapped(new Taxed(new Discounted(new BaseProduct(book))));
+    BigDecimal price = wrapped.price();   // 113.00
+
+The leaf being wrapped is a `BaseProduct`, a small record that adapts a shared
+`common.Product` into the decorator's own interface. This is necessary because
+`common.Product` is `sealed` and so, exactly like the object-oriented visitor, the
+decorator cannot make the `common` records implement its interface directly.
+
+### The functional approach
+
+Look now at the class diagram of the functional style implementation:
+
+![decorator-fp](decorator-fp.png "FP Decorator")
+
+The functional counterpart of a decorator is simply a function whicg maps a product
+to an enhanced product and implemented as an `UnaryOperator<Product>`. Because 
+the `common` records are immutable, "enhancing" one means rebuilding it through
+the `ProductType` factory, already seen at the very beginning, which is why the
+FP side reuses `common` directly with no adapter:
+
+    public static final UnaryOperator<Product> DISCOUNTED = product ->
+      product.type().newInstance(product.name(),
+        product.description() + " (discounted)",
+        product.price().subtract(amount(product.price(), "0.10")));
+
+Being ordinary values, the decorations compose with `andThen`, exactly as the
+factory composed its `factory` function, the visitor composed its operations and
+the builder composed its steps:
+
+    UnaryOperator<Product> decorate = DISCOUNTED.andThen(TAXED).andThen(GIFT_WRAPPED);
+    Product wrapped = decorate.apply(book);   // price 113.00
+
+And, just like the functional builder step, a decoration is a reusable first-class
+value. For example, the same discount could be applied twice:
+
+    Product wrapped = DISCOUNTED.andThen(DISCOUNTED).apply(book);   // 100 -> 90 -> 81
+
+The object-oriented Decorator wraps the component in a stack of objects sharing its
+interface, while the functional one expresses the very same stacking as the
+composition of pure `Product` to `Product` functions. "Turtles all the way down",
+and both land on the same enhanced product.
+
 ## Project structure
 
 The code is organized as a multi-module Maven project. The product domain lives
 in its own `common` module: a `sealed` `Product` interface, the three product
-records and the `ProductType` enumerated - which already carries the FP factory
-function seen above. Everything that *can* reuse that domain does:
+records and the `ProductType` enumerated which already carries the FP factory
+function seen above. Everything that can reuse that domain does:
 
     oop-fp-design-patterns        (parent POM)
     ├── common                    sealed Product, the records, ProductType(+factory)
     ├── factory   (→ common)      ProductFactory (OOP); the FP factory *is* common.ProductType
     ├── visitor   (→ common)      FP: operations over the common records (switch + lambda bundle)
     │                             OOP: its own element hierarchy (see below)
-    └── builder   (→ common)      immutable Order over the common records; OOP: fluent
-                                  OrderBuilder; FP: composed UnaryOperator<Order> steps
+    ├── builder   (→ common)      immutable Order over the common records; OOP: fluent
+    │                             OrderBuilder; FP: composed UnaryOperator<Order> steps
+    └── decorator (→ common)      FP: composed UnaryOperator<Product> decorations over the
+                                  common records; OOP: its own Product interface (see below)
 
-The FP factory and the FP visitor both operate directly on the `common` records,
-so nothing is duplicated there. The one exception is the object-oriented
-Visitor which needs an `accept` method on every element (double dispatch), and
-since `common.Product` is `sealed` it cannot be extended from another module.
-The OOP visitor therefore owns its element hierarchy and reuses only the
-`ProductType` enumerated. This asymmetry is not accidental. The classic Visitor
-requires every element to expose an `accept` method, which couples the elements to
-the visitor abstraction. These elements must be defined together with the visitor abstraction, and so cannot be
-the sealed records defined in `common`. The functional approach has no such coupling: it
-pattern-matches over the sealed type from the outside, so the elements know nothing
-about the operations applied to them and, hence, can be the shared `common` records.
+The FP factory, the FP visitor and the FP decorator all operate directly on the
+`common` records, so nothing is duplicated there. The two exceptions are the
+object-oriented Visitor and the object-oriented Decorator. The Visitor needs an
+`accept` method on every element (double dispatch); the Decorator needs a
+non-sealed `Product` interface that its wrappers can implement. In both cases
+`common.Product` is `sealed` and cannot be extended from another module, so each
+owns its own element/component types and reuses only the `ProductType` enumerated -
+the OOP decorator bridges back to `common` through a small `BaseProduct` adapter.
+This asymmetry is not accidental. The classic Visitor requires every element to
+expose an `accept` method and the classic Decorator requires every component to
+share the wrappers' interface; both couple the elements to the pattern's
+abstraction, so they cannot be the sealed records defined in `common`. The
+functional approach has no such coupling: it operates over the sealed type from the
+outside - pattern-matching for the visitor, rebuilding through the factory for the
+decorator - so the elements know nothing about the operations applied to them and,
+hence, can be the shared `common` records.
 
 The full code of these examples, including the associated unit tests, 
 can be found here.

@@ -1,0 +1,58 @@
+@startuml
+
+!theme plain
+top to bottom direction
+skinparam linetype ortho
+
+interface Product {
+  +name() : String
+  +description() : String
+  +price() : BigDecimal
+  +type() : ProductType
+}
+
+entity BaseProduct << record >> {
+  +product : common.Product
+  +name() : String
+  +description() : String
+  +price() : BigDecimal
+  +type() : ProductType
+}
+
+abstract class ProductDecorator {
+  #product : Product
+  +name() : String
+  +description() : String
+  +price() : BigDecimal
+  +type() : ProductType
+}
+
+class Discounted {
+  +price() : BigDecimal
+  +description() : String
+}
+class Taxed {
+  +price() : BigDecimal
+  +description() : String
+}
+class GiftWrapped {
+  +price() : BigDecimal
+  +description() : String
+}
+
+note top of ProductDecorator
+  Classic GoF Decorator: each decorator implements the
+  same Product interface and wraps a Product, delegating
+  the untouched parts and overriding price()/description().
+  Decorators stack, so behaviour is added dynamically
+  without touching the wrapped component.
+end note
+
+BaseProduct       .up.|>  Product
+ProductDecorator  .up.|>  Product
+Discounted        --up|>  ProductDecorator
+Taxed             --up|>  ProductDecorator
+GiftWrapped       --up|>  ProductDecorator
+ProductDecorator  o-->  "1" Product : "wraps"
+BaseProduct       -[#595959,dashed]->  Product : "adapts common.Product"
+@enduml
